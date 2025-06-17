@@ -1,4 +1,40 @@
+# 🚀 Arcade Space Game
 
+¡Juego de naves espacial retro en Phaser 3!  
+Supera oleadas de enemigos, enfréntate a bosses épicos y progresa por mapas cada vez más difíciles.
+
+---
+
+## 🎮 **Cómo Jugar**
+
+- **Mover:** Flechas izquierda y derecha (← →) o A/D
+- **Disparar:** Espacio o clic izquierdo
+- **Derrota enemigos y bosses para avanzar de nivel**
+- Recoge monedas y consigue power-ups para mejorar tu nave
+
+---
+
+## 🖥️ **Estructura del Proyecto**
+
+/mi-juego-naves/
+│
+├─ index.html
+├─ main.js
+├─ scenes/
+│ ├─ MainMenuScene.js
+│ ├─ GameScene.js
+│ └─ GameOverScene.js
+├─ assets/
+│ ├─ playerShip1_blue.png
+│ ├─ enemyRed1.png
+│ ├─ minion.png
+│ ├─ boss1.png
+│ ├─ boss2.png
+│ ├─ boss3.png
+│ ├─ boss_bullet.png
+│ ├─ explosion.png
+│ ├─ laser.png
+│ └─ ...otros assets
 ---
 
 ## 🚀 **Arrancar el juego localmente**
