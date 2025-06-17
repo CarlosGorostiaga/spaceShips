@@ -1,4 +1,3 @@
-// scenes/GameScene.js
 export default class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
@@ -9,227 +8,355 @@ export default class GameScene extends Phaser.Scene {
   }
 
   preload() {
-    // Cargar aquí todos los assets
     this.load.image('player', 'assets/playerShip1_blue.png');
-    this.load.image('enemy', 'assets/enemyRed1.png');
     this.load.image('minion', 'assets/minion.png');
     this.load.image('bullet', 'assets/laserBlue01.png');
     this.load.image('boss1', 'assets/boss1.png');
     this.load.image('boss2', 'assets/boss2.png');
     this.load.image('boss3', 'assets/boss3.png');
     this.load.image('boss_bullet', 'assets/boss_bullet.png');
-    this.load.spritesheet('explosion', 'assets/explosion.png', { frameWidth: 32, frameHeight: 32 });
-    this.load.image('laser', 'assets/laser.png');
+    this.load.image('enemy_bullet', 'assets/laserRed05.png');
+    this.load.image('pill', 'assets/pill_red.png');
+    this.load.spritesheet('explosion', 'assets/explosion.png', { frameWidth: 64, frameHeight: 64 });
+    this.load.image('background', 'assets/blue.png');
+    for (const color of ['Red','Green','Black']) {
+      for (let i = 1; i <= 5; i++) {
+        this.load.image(`enemy${color}${i}`, `assets/enemy${color}${i}.png`);
+      }
+    }
   }
 
   create() {
-    // Variables de escena
+    // --- Fondo desplazable ---
+    this.bg = this.add.tileSprite(240, 500, 480, 1000, 'background');
+
     this.score = 0;
     this.playerLives = this.playerUpgrades.maxHealth;
     this.invulnerable = false;
     this.lastEnemySpawn = 0;
     this.boss = null;
-    this.bossHealthBar = null;
     this.bossPhase = 1;
     this.bossDestroyed = false;
-    this.bossMoveDir = 1;
     this.lastBossShot = 0;
-    this.bossSpeech = null;
-    this.bossTalkTimer = 0;
-    this.level = this.mapIndex+1;
+    this.lastBossTriple = 0;
+    this.pillStartDropped = false;
+    this.pillsPhase2Dropped = 0;
 
+    // --- Player ---
     this.cursors = this.input.keyboard.createCursorKeys();
-    this.player = this.physics.add.sprite(240, 570, 'player');
-    this.player.setCollideWorldBounds(true);
+    this.player = this.physics.add.sprite(240, 930, 'player').setCollideWorldBounds(true);
 
-    this.bullets = this.physics.add.group();
-    this.enemies = this.physics.add.group();
-    this.minions = this.physics.add.group();
+    // --- Groups ---
+    this.bullets     = this.physics.add.group();
+    this.enemies     = this.physics.add.group();
+    this.minions     = this.physics.add.group();
     this.bossBullets = this.physics.add.group();
-    this.explosions = this.add.group();
+    this.enemyBullets = this.physics.add.group();
+    this.lifePills = this.physics.add.group();
 
+    // --- UI ---
+    this.scoreText = this.add.text(10,10,'Score: 0',{ font:'20px Arial', fill:'#fff' });
+    this.livesText = this.add.text(370,10,'Vidas: '+this.playerLives,{ font:'20px Arial', fill:'#fff' });
+
+    this.bossHealthBar = this.add.rectangle(240, 30, 300, 16, 0x00ff44)
+      .setOrigin(0.5,0.5).setVisible(false);
+    this.bossHealthText = this.add.text(240, 10, '', { font: '16px Arial', fill: '#fff' })
+      .setOrigin(0.5,0).setVisible(false);
+
+    this.bossSpeech = this.add.text(240, 65, '', {
+      font: 'bold 18px Arial', fill: '#fff',
+      backgroundColor: '#222', padding: { x: 12, y: 4 }
+    }).setOrigin(0.5, 0.5).setVisible(false);
+
+    // --- Explosión animada ---
     this.anims.create({
       key: 'explode',
-      frames: this.anims.generateFrameNumbers('explosion', { start: 0, end: 7 }),
-      frameRate: 14,
-      repeat: 0,
-      hideOnComplete: true
+      frames: this.anims.generateFrameNumbers('explosion',{ start:0, end:7 }),
+      frameRate: 18, repeat:0, hideOnComplete:true
     });
 
-    this.scoreText = this.add.text(10, 10, 'Score: 0', { font: '20px Arial', fill: '#fff' });
-    this.livesText = this.add.text(370, 10, 'Vidas: ' + this.playerLives, { font: '20px Arial', fill: '#fff' });
-
-    this.bossHealthBar = this.add.rectangle(240, 30, 300, 16, 0x00ff44).setOrigin(0.5, 0.5).setVisible(false);
-    this.bossHealthText = this.add.text(240, 10, '', { font: '16px Arial', fill: '#fff' }).setOrigin(0.5, 0).setVisible(false);
-    this.bossSpeech = this.add.text(240, 65, '', { font: 'bold 18px Arial', fill: '#fff', backgroundColor: '#222', padding: { x: 12, y: 4 } }).setOrigin(0.5, 0.5).setVisible(false);
-
-    // Colisiones
+    // --- Overlaps ---
     this.physics.add.overlap(this.bullets, this.enemies, this.bulletHitsEnemy, null, this);
     this.physics.add.overlap(this.bullets, this.minions, this.bulletHitsMinion, null, this);
     this.physics.add.overlap(this.bossBullets, this.player, this.bossBulletHitsPlayer, null, this);
+    this.physics.add.overlap(this.enemyBullets, this.player, this.enemyBulletHitsPlayer, null, this);
+    this.physics.add.overlap(this.player, this.lifePills, this.playerGetsLife, null, this);
     this.physics.add.overlap(this.enemies, this.player, this.enemyHitsPlayer, null, this);
     this.physics.add.overlap(this.minions, this.player, this.enemyHitsPlayer, null, this);
+
+    // Boss group para hitbox
+    this.bossGroup = this.physics.add.group();
   }
 
-  update(time, delta) {
-    // --- Player movement ---
-    if (this.cursors.left.isDown) this.player.setVelocityX(-300);
+  update(time) {
+    this.bg.tilePositionY -= 1.5;
+
+    // --- Movimiento player ---
+    if (this.cursors.left.isDown)  this.player.setVelocityX(-300);
     else if (this.cursors.right.isDown) this.player.setVelocityX(300);
     else this.player.setVelocityX(0);
 
-    // --- Shooting ---
-    if ((this.cursors.space.isDown || this.input.activePointer.isDown) && (!this.lastFired || time > this.lastFired + 250)) {
-      let bullet = this.bullets.create(this.player.x, this.player.y-30, 'bullet');
-      bullet.setVelocityY(-500);
-      bullet.setCollideWorldBounds(false);
+    // --- Disparo jugador ---
+    if ((this.cursors.space.isDown || this.input.activePointer.isDown) 
+         && (!this.lastFired || time > this.lastFired + 250)) {
+      let b = this.bullets.create(this.player.x, this.player.y-30,'bullet');
+      b.setVelocityY(-500).setCollideWorldBounds(false);
       this.lastFired = time;
     }
 
-    // --- Spawn Enemies ---
+    // --- Spawn enemigos ---
     if (!this.boss && (!this.lastEnemySpawn || time > this.lastEnemySpawn + 1200) && this.score < 100) {
-      let x = Phaser.Math.Between(30, 450);
-      let enemy = this.enemies.create(x, -20, 'enemy');
-      enemy.setVelocityY(90);
+      let x = Phaser.Math.Between(30,450);
+      const colors = ['Red','Green','Black'];
+      const color = colors[Phaser.Math.Between(0, colors.length-1)];
+      const num = Phaser.Math.Between(1,5);
+      const skin = `enemy${color}${num}`;
+      let e = this.enemies.create(x,-20,skin);
+      e.setVelocityY(90);
       this.lastEnemySpawn = time;
     }
 
-    // --- Clean Up ---
-    this.enemies.children.iterate(enemy => { if (enemy && enemy.y > 700) enemy.destroy(); });
-    this.bullets.children.iterate(bullet => { if (bullet && bullet.y < -40) bullet.destroy(); });
-    this.bossBullets.children.iterate(bullet => { if (bullet && (bullet.y > 700 || bullet.x < -40 || bullet.x > 520)) bullet.destroy(); });
+    // --- Limpiar fuera de pantalla ---
+    this.enemies.children.iterate(e => { if(e && e.y>1050) e.destroy(); });
+    this.bullets.children.iterate(b => { if(b && b.y< -40) b.destroy(); });
+    this.bossBullets.children.iterate(b => { if(b && b.y>1050) b.destroy(); });
+    this.enemyBullets.children.iterate(b => { if(b && b.y>1050) b.destroy(); });
+    this.lifePills.children.iterate(pill => { if(pill && pill.y>1050) pill.destroy(); });
 
-    // --- Boss Logic ---
-    if (!this.boss && this.score >= 100 && !this.bossDestroyed) this.spawnBoss();
+    // --- Enemigos disparan ---
+    this.enemies.children.iterate(enemy => {
+      if (!enemy) return;
+      if (!enemy.lastShot) enemy.lastShot = 0;
+      if (this.time.now > enemy.lastShot + Phaser.Math.Between(3500, 6500)) {
+        this.shootEnemyBullet(enemy.x, enemy.y+10);
+        enemy.lastShot = this.time.now;
+      }
+    });
 
+    // --- Lógica de boss ---
+    if (!this.boss && this.score>=100 && !this.bossDestroyed) {
+      this.spawnBoss();
+    }
     if (this.boss) {
       this.bossMovementAndAttacks(time);
-
-      if (this.boss.health <= 0 && !this.bossDestroyed) {
+      this.updateBossHealthBar();
+      if (this.boss.health<=0 && !this.bossDestroyed) {
+        this.bossDestroyed=true;
         this.boss.setTexture('boss3');
         this.bossHealthBar.setVisible(false);
         this.bossHealthText.setVisible(false);
-        this.bossDestroyed = true;
         this.bossTalk("¡Noooooo!");
-        this.createExplosion(this.boss.x, this.boss.y);
-        this.score += 150;
-        this.scoreText.setText('Score: ' + this.score + ' (Boss derrotado!)');
-        setTimeout(() => { if (this.boss) this.boss.destroy(); this.scene.start('GameOverScene', { score: this.score }); }, 1600);
+        this.createExplosion(this.boss.x,this.boss.y,2);
+        this.time.delayedCall(1600, ()=> this.scene.start('GameOverScene',{ score:this.score }));
       }
     }
 
-    // --- Boss Speech Bubble Timeout ---
-    if (this.bossSpeech.visible && time > this.bossTalkTimer + 2200) this.bossSpeech.setVisible(false);
+    // Diálogo del boss: oculta tras 1.8s
+    if (this.bossSpeech.visible && this.time.now > this.bossTalkTimer + 1800) {
+      this.bossSpeech.setVisible(false);
+    }
   }
 
-  // ------------------- LOGICA DE BOSS Y ENEMIGOS -------------------
   spawnBoss() {
-    this.boss = this.physics.add.sprite(240, 120, 'boss1');
-    this.boss.setImmovable(true);
-    this.boss.health = 500;
+    this.boss = this.physics.add.sprite(240,150,'boss1')
+      .setImmovable(true).setScale(0.25);
+    this.boss.health = 750;
     this.bossPhase = 1;
     this.bossDestroyed = false;
+    this.lastBossShot = 0;
+    this.lastBossTriple = 0;
+    this.boss.dir = 1;
+    this.boss.upDownDir = 1;
     this.bossHealthBar.setVisible(true);
     this.bossHealthText.setVisible(true);
-    this.boss.setScale(1.5);
-    this.bossMoveDir = 1;
+
+    this.pillStartDropped = false;
+    this.pillsPhase2Dropped = 0;
+
+    this.boss.body.setSize(this.boss.displayWidth, this.boss.displayHeight * 0.60);
+
+    this.bossGroup.clear(true, true);
+    this.bossGroup.add(this.boss);
+    this.physics.add.overlap(this.bullets, this.bossGroup, this.bulletHitsBoss, null, this);
+
     this.bossTalk("¡Prepárate para morir!");
+    // Dropea una pildora al aparecer el boss
+    if (!this.pillStartDropped) {
+      this.time.delayedCall(400, () => {
+        this.dropLifePill(this.boss.x, this.boss.y + this.boss.displayHeight/2 + 10);
+      });
+      this.pillStartDropped = true;
+    }
   }
 
   bossMovementAndAttacks(time) {
-    if (this.boss.x <= 60) this.bossMoveDir = 1;
-    if (this.boss.x >= 420) this.bossMoveDir = -1;
-    let moveSpeed = this.bossPhase === 1 ? 2 : 4;
-    this.boss.x += moveSpeed * this.bossMoveDir;
+    // --- Movimiento lateral y vertical ---
+    if (!this.boss.tweening) {
+      this.boss.tweening = true;
+      let destinoX = this.boss.x < 240 ? 430 : 50;
+      this.tweens.add({
+        targets: this.boss,
+        x: destinoX,
+        duration: 1100,
+        ease: 'Sine.easeInOut',
+        onComplete: () => { this.boss.tweening = false; }
+      });
+    }
+    if (!this.boss.vtweening) {
+      this.boss.vtweening = true;
+      let minY = 120, maxY = 280;
+      let destinoY = Phaser.Math.Between(minY, maxY);
+      this.tweens.add({
+        targets: this.boss,
+        y: destinoY,
+        duration: Phaser.Math.Between(1700, 2600),
+        ease: 'Sine.easeInOut',
+        onComplete: () => { this.boss.vtweening = false; }
+      });
+    }
 
     if (this.bossPhase === 1) {
-      if (time > this.lastBossShot + 1500) {
-        this.shootBossBullet(this.boss.x, this.boss.y + this.boss.height/2, 0, 300, 1);
-        this.lastBossShot = time;
+      if (this.time.now > this.lastBossShot + 1450) {
+        this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 150, 1);
+        this.lastBossShot = this.time.now;
       }
     } else if (this.bossPhase === 2 && !this.bossDestroyed) {
-      if (time > this.lastBossShot + 1000) {
-        for (let i = -2; i <= 2; i++) {
-          let angle = Phaser.Math.DegToRad(i * 20);
-          let vx = Math.sin(angle) * 200;
-          let vy = Math.cos(angle) * 320;
-          this.shootBossBullet(this.boss.x, this.boss.y + this.boss.height/2, vx, vy, 2);
-        }
-        this.lastBossShot = time;
+      // --- DISPARO TRIPLE cada 5s ---
+      if (!this.lastBossTriple || this.time.now - this.lastBossTriple > 5000) {
+        this.bossTalk("¡Triple disparo!");
+        this.time.delayedCall(400, () => {
+          for (let i = -1; i <= 1; i++) {
+            let angle = Phaser.Math.DegToRad(i * 18);
+            let vx = Math.sin(angle) * 125;
+            let vy = Math.cos(angle) * 220;
+            this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, vx, vy, 1);
+          }
+        });
+        this.lastBossTriple = this.time.now;
+        this.lastBossShot = this.time.now;
+      } else if (this.time.now > this.lastBossShot + 1200) {
+        this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 170, 1);
+        this.lastBossShot = this.time.now;
       }
-      if (Math.random() < 0.01) this.bossMoveDir *= -1;
+      // Disparo especial raro (cada ~6,5s)
+      if (!this.boss.lastSpecial || this.time.now > this.boss.lastSpecial + 6500) {
+        this.bossTalk("¡Láser especial!");
+        this.time.delayedCall(700, () =>
+          this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 330, 2)
+        );
+        this.boss.lastSpecial = this.time.now;
+      }
+
+      // Suelta dos pildoras con separación durante la fase 2
+      if (this.pillsPhase2Dropped < 2) {
+        if (this.pillsPhase2Dropped === 0 && this.boss.health <= 280) {
+          this.time.delayedCall(150, () => {
+            this.dropLifePill(this.boss.x, this.boss.y + this.boss.displayHeight/2 + 8);
+          });
+          this.pillsPhase2Dropped++;
+        } else if (this.pillsPhase2Dropped === 1 && this.boss.health <= 120) {
+          this.time.delayedCall(400, () => {
+            this.dropLifePill(this.boss.x, this.boss.y + this.boss.displayHeight/2 + 10);
+          });
+          this.pillsPhase2Dropped++;
+        }
+      }
     }
-    // Fase 2 trigger
-    if (this.boss.health <= 250 && this.bossPhase === 1) {
+    // Cambio a fase 2
+    if (this.boss.health<=375 && this.bossPhase===1) {
+      this.bossPhase=2;
       this.boss.setTexture('boss2');
       this.bossTalk("¡Ahora verás mi verdadero poder!");
-      this.bossPhase = 2;
     }
-    // Barra vida
+  }
+
+  shootBossBullet(x, y, velX, velY, power=1) {
+    let bb = this.bossBullets.create(x, y, 'boss_bullet');
+    bb.setScale(0.05)
+      .setVelocity(velX,velY)
+      .setCollideWorldBounds(false);
+    bb.power = power;
+  }
+
+  shootEnemyBullet(x, y) {
+    let bullet = this.enemyBullets.create(x, y, 'enemy_bullet');
+    bullet.setVelocityY(140);
+    bullet.setScale(0.7);
+    bullet.setCollideWorldBounds(false);
+  }
+
+  dropLifePill(x, y) {
+    let pill = this.lifePills.create(x, y, 'pill');
+    pill.setVelocityY(90);
+    pill.setScale(0.7);
+    pill.setCollideWorldBounds(false);
+  }
+
+  // --- Callbacks colisión ---
+  bulletHitsEnemy(b, e) {
+    const x=e.x, y=e.y;
+    b.destroy(); e.destroy();
+    this.createExplosion(x,y,1);
+    this.score+=10; this.scoreText.setText('Score: '+this.score);
+  }
+  bulletHitsMinion(b,m) {
+    const x=m.x, y=m.y;
+    b.destroy(); m.destroy();
+    this.createExplosion(x,y,1);
+    this.score+=5; this.scoreText.setText('Score: '+this.score);
+  }
+  bossBulletHitsPlayer(p,bb) {
+    if (this.invulnerable) return;
+    bb.destroy(); this.playerHit();
+  }
+  enemyBulletHitsPlayer(p,bullet) {
+    if (this.invulnerable) return;
+    bullet.destroy(); this.playerHit();
+  }
+  enemyHitsPlayer(p,e) {
+    this.createExplosion(p.x,p.y,1.5);
+    e.destroy(); this.playerHit();
+  }
+  bulletHitsBoss(b, boss) {
+    b.destroy();
+    boss.health -= this.playerUpgrades.attack * 10;
+    boss.setTint(0xff4444);
+    this.time.delayedCall(100, ()=> boss.clearTint());
+    this.createExplosion(b.x,b.y,0.7);
     this.updateBossHealthBar();
   }
-
-  shootBossBullet(x, y, velX, velY, power = 1) {
-    let bossBullet = this.bossBullets.create(x, y+40, 'boss_bullet');
-    bossBullet.setVelocity(velX, velY);
-    bossBullet.setCollideWorldBounds(false);
-    bossBullet.power = power;
-  }
-
-  // ------------------- COLISIONES Y DAÑOS -------------------
-  bulletHitsEnemy(bullet, enemy) {
-    bullet.destroy();
-    this.createExplosion(enemy.x, enemy.y);
-    enemy.destroy();
-    this.score += 10;
-    this.scoreText.setText('Score: ' + this.score);
-  }
-  bulletHitsMinion(bullet, minion) {
-    bullet.destroy();
-    this.createExplosion(minion.x, minion.y);
-    minion.destroy();
-    this.score += 5;
-    this.scoreText.setText('Score: ' + this.score);
-  }
-  bossBulletHitsPlayer(player, bossBullet) {
-    if (this.invulnerable) return;
-    bossBullet.destroy();
-    this.playerHit();
-  }
-  enemyHitsPlayer(player, enemy) {
-    if (this.invulnerable) return;
-    this.createExplosion(player.x, player.y);
-    enemy.destroy();
-    this.playerHit();
+  playerGetsLife(player, pill) {
+    pill.destroy();
+    this.playerLives++;
+    this.livesText.setText('Vidas: ' + this.playerLives);
+    this.bossTalk('¡Una vida extra!');
   }
   playerHit() {
     this.playerLives--;
-    this.livesText.setText('Vidas: ' + this.playerLives);
+    this.livesText.setText('Vidas: '+this.playerLives);
     this.player.setTint(0xff4444);
-    this.invulnerable = true;
-    if (this.playerLives <= 0) {
-      this.player.setVisible(false);
-      this.bossTalk("¡Te lo advertí, terrícola!");
-      setTimeout(() => this.scene.start('GameOverScene', { score: this.score }), 1500);
-    } else {
-      setTimeout(() => {
-        this.player.clearTint();
-        this.invulnerable = false;
-      }, 1200);
-    }
+    this.invulnerable=true;
+    this.time.delayedCall(1200,()=>{ this.player.clearTint(); this.invulnerable=false; });
+    if (this.playerLives<=0) this.scene.start('GameOverScene',{score:this.score});
   }
+
   updateBossHealthBar() {
-    const percent = Math.max(this.boss.health / 500, 0);
+    if (!this.boss || !this.bossHealthBar) return;
+    let percent = Math.max(this.boss.health / 750, 0);
     this.bossHealthBar.width = 300 * percent;
     this.bossHealthBar.setFillStyle(percent > 0.5 ? 0x00ff44 : percent > 0.2 ? 0xffff44 : 0xff4444);
-    this.bossHealthText.setText('Boss: ' + Math.max(this.boss.health, 0) + ' / 500' + (this.bossPhase > 1 ? " ⚡" : ""));
+    this.bossHealthText.setText('Boss: ' + Math.max(this.boss.health, 0) + ' / 750' + (this.bossPhase > 1 ? " ⚡" : ""));
   }
-  bossTalk(text) {
-    this.bossSpeech.setText(text).setVisible(true);
-    this.bossTalkTimer = Date.now();
-  }
-  createExplosion(x, y, scale = 1) {
-    let boom = this.add.sprite(x, y, 'explosion');
-    boom.setScale(scale);
+
+  createExplosion(x,y,scale=1) {
+    let boom = this.add.sprite(x,y,'explosion').setScale(scale);
     boom.play('explode');
   }
+
+  bossTalk(text) {
+    this.bossSpeech.setText(text).setVisible(true);
+    this.bossTalkTimer = this.time.now;
+  }
 }
+
+
