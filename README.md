@@ -41,8 +41,7 @@ Supera oleadas de enemigos, enfréntate a bosses épicos y progresa por mapas ca
 
 1. Clona el repositorio:
     ```bash
-    git clone https://github.com/tu-usuario/arcade-space-game.git
-    cd arcade-space-game
+    git clone https://github.com/CarlosGorostiaga/spaceShips.git
     ```
 
 2. Instala `http-server` (si no lo tienes):
@@ -52,7 +51,7 @@ Supera oleadas de enemigos, enfréntate a bosses épicos y progresa por mapas ca
 
 3. Lanza el servidor local:
     ```bash
-    http-server
+    http-server -c-1
     ```
 
 4. Abre el navegador en [http://localhost:8080](http://localhost:8080)
