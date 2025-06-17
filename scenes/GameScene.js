@@ -38,6 +38,9 @@ export default class GameScene extends Phaser.Scene {
     this.bossPhase = 1;
     this.bossDestroyed = false;
     this.lastBossShot = 0;
+    this.lastBossTriple = 0;
+    this.pillStartDropped = false;
+    this.pillsPhase2Dropped = 0;
 
     // --- Player ---
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -65,12 +68,14 @@ export default class GameScene extends Phaser.Scene {
       backgroundColor: '#222', padding: { x: 12, y: 4 }
     }).setOrigin(0.5, 0.5).setVisible(false);
 
+    // --- Explosión animada ---
     this.anims.create({
       key: 'explode',
       frames: this.anims.generateFrameNumbers('explosion',{ start:0, end:7 }),
       frameRate: 18, repeat:0, hideOnComplete:true
     });
 
+    // --- Overlaps ---
     this.physics.add.overlap(this.bullets, this.enemies, this.bulletHitsEnemy, null, this);
     this.physics.add.overlap(this.bullets, this.minions, this.bulletHitsMinion, null, this);
     this.physics.add.overlap(this.bossBullets, this.player, this.bossBulletHitsPlayer, null, this);
@@ -79,60 +84,24 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.enemies, this.player, this.enemyHitsPlayer, null, this);
     this.physics.add.overlap(this.minions, this.player, this.enemyHitsPlayer, null, this);
 
+    // Boss group para hitbox
     this.bossGroup = this.physics.add.group();
-
-    // --- CONTROLES TÁCTILES PARA MÓVIL ---
-    this.isMobile = this.sys.game.device.os.android || this.sys.game.device.os.iOS;
-    if (this.isMobile) {
-      // Zonas táctiles: izquierda, derecha y disparo (abajo centro)
-      this.leftZone = this.add.zone(0, 0, 160, 1000).setOrigin(0).setInteractive();
-      this.leftZone.on('pointerdown', () => this.leftDown = true);
-      this.leftZone.on('pointerup',   () => this.leftDown = false);
-      this.leftZone.on('pointerout',  () => this.leftDown = false);
-
-      this.rightZone = this.add.zone(320, 0, 160, 1000).setOrigin(0).setInteractive();
-      this.rightZone.on('pointerdown', () => this.rightDown = true);
-      this.rightZone.on('pointerup',   () => this.rightDown = false);
-      this.rightZone.on('pointerout',  () => this.rightDown = false);
-
-      this.fireZone = this.add.zone(160, 850, 160, 150).setOrigin(0).setInteractive();
-      this.fireZone.on('pointerdown', () => this.fireDown = true);
-      this.fireZone.on('pointerup',   () => this.fireDown = false);
-      this.fireZone.on('pointerout',  () => this.fireDown = false);
-
-      // Visual botones (rectángulos semi-transparentes)
-      this.leftBtn  = this.add.rectangle(80, 920, 120, 120, 0xffffff, 0.10).setScrollFactor(0);
-      this.rightBtn = this.add.rectangle(400, 920, 120, 120, 0xffffff, 0.10).setScrollFactor(0);
-      this.fireBtn  = this.add.rectangle(240, 920, 160, 70, 0x00ff00, 0.13).setScrollFactor(0);
-    }
   }
 
   update(time) {
-    // Fondo desplazable (simula scroll)
     this.bg.tilePositionY -= 1.5;
 
-    // --- Movimiento ---
-    if (this.isMobile) {
-      if (this.leftDown) this.player.setVelocityX(-300);
-      else if (this.rightDown) this.player.setVelocityX(300);
-      else this.player.setVelocityX(0);
+    // --- Movimiento player ---
+    if (this.cursors.left.isDown)  this.player.setVelocityX(-300);
+    else if (this.cursors.right.isDown) this.player.setVelocityX(300);
+    else this.player.setVelocityX(0);
 
-      if (this.fireDown && (!this.lastFired || time > this.lastFired + 250)) {
-        let b = this.bullets.create(this.player.x, this.player.y-30,'bullet');
-        b.setVelocityY(-500).setCollideWorldBounds(false);
-        this.lastFired = time;
-      }
-    } else {
-      if (this.cursors.left.isDown)  this.player.setVelocityX(-300);
-      else if (this.cursors.right.isDown) this.player.setVelocityX(300);
-      else this.player.setVelocityX(0);
-
-      if ((this.cursors.space.isDown || this.input.activePointer.isDown) 
-          && (!this.lastFired || time > this.lastFired + 250)) {
-        let b = this.bullets.create(this.player.x, this.player.y-30,'bullet');
-        b.setVelocityY(-500).setCollideWorldBounds(false);
-        this.lastFired = time;
-      }
+    // --- Disparo jugador ---
+    if ((this.cursors.space.isDown || this.input.activePointer.isDown) 
+         && (!this.lastFired || time > this.lastFired + 250)) {
+      let b = this.bullets.create(this.player.x, this.player.y-30,'bullet');
+      b.setVelocityY(-500).setCollideWorldBounds(false);
+      this.lastFired = time;
     }
 
     // --- Spawn enemigos ---
@@ -158,7 +127,7 @@ export default class GameScene extends Phaser.Scene {
     this.enemies.children.iterate(enemy => {
       if (!enemy) return;
       if (!enemy.lastShot) enemy.lastShot = 0;
-      if (this.time.now > enemy.lastShot + Phaser.Math.Between(3000, 4500)) {
+      if (this.time.now > enemy.lastShot + Phaser.Math.Between(3500, 6500)) {
         this.shootEnemyBullet(enemy.x, enemy.y+10);
         enemy.lastShot = this.time.now;
       }
@@ -189,15 +158,20 @@ export default class GameScene extends Phaser.Scene {
   }
 
   spawnBoss() {
-    this.boss = this.physics.add.sprite(240,120,'boss1')
+    this.boss = this.physics.add.sprite(240,150,'boss1')
       .setImmovable(true).setScale(0.25);
-    this.boss.health = 500;
+    this.boss.health = 750;
     this.bossPhase = 1;
     this.bossDestroyed = false;
     this.lastBossShot = 0;
+    this.lastBossTriple = 0;
     this.boss.dir = 1;
+    this.boss.upDownDir = 1;
     this.bossHealthBar.setVisible(true);
     this.bossHealthText.setVisible(true);
+
+    this.pillStartDropped = false;
+    this.pillsPhase2Dropped = 0;
 
     this.boss.body.setSize(this.boss.displayWidth, this.boss.displayHeight * 0.60);
 
@@ -206,54 +180,90 @@ export default class GameScene extends Phaser.Scene {
     this.physics.add.overlap(this.bullets, this.bossGroup, this.bulletHitsBoss, null, this);
 
     this.bossTalk("¡Prepárate para morir!");
-    // Al aparecer, suelta una pildora extra:
-    this.dropLifePill(this.boss.x, this.boss.y + this.boss.displayHeight/2 + 5);
+    // Dropea una pildora al aparecer el boss
+    if (!this.pillStartDropped) {
+      this.time.delayedCall(400, () => {
+        this.dropLifePill(this.boss.x, this.boss.y + this.boss.displayHeight/2 + 10);
+      });
+      this.pillStartDropped = true;
+    }
   }
 
   bossMovementAndAttacks(time) {
-    // Patron lateral predecible
+    // --- Movimiento lateral y vertical ---
     if (!this.boss.tweening) {
       this.boss.tweening = true;
       let destinoX = this.boss.x < 240 ? 430 : 50;
       this.tweens.add({
         targets: this.boss,
         x: destinoX,
-        duration: 1200,
+        duration: 1100,
         ease: 'Sine.easeInOut',
         onComplete: () => { this.boss.tweening = false; }
       });
     }
+    if (!this.boss.vtweening) {
+      this.boss.vtweening = true;
+      let minY = 120, maxY = 280;
+      let destinoY = Phaser.Math.Between(minY, maxY);
+      this.tweens.add({
+        targets: this.boss,
+        y: destinoY,
+        duration: Phaser.Math.Between(1700, 2600),
+        ease: 'Sine.easeInOut',
+        onComplete: () => { this.boss.vtweening = false; }
+      });
+    }
 
-    // Movimiento vertical suave (añadido)
-    this.boss.y += Math.sin(this.time.now/1000) * 0.6;
-
-    // --- DISPARO: sólo una bala normal casi siempre, rara vez especial ---
-    if (this.time.now > this.lastBossShot + 1300) {
-      if (this.bossPhase === 1) {
-        this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 170, 1);
-      } else {
-        // Fase 2: cada 5 segundos triple disparo, resto 1 bala
-        if (!this.lastTripleShot || this.time.now > this.lastTripleShot + 5000) {
+    if (this.bossPhase === 1) {
+      if (this.time.now > this.lastBossShot + 1450) {
+        this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 150, 1);
+        this.lastBossShot = this.time.now;
+      }
+    } else if (this.bossPhase === 2 && !this.bossDestroyed) {
+      // --- DISPARO TRIPLE cada 5s ---
+      if (!this.lastBossTriple || this.time.now - this.lastBossTriple > 5000) {
+        this.bossTalk("¡Triple disparo!");
+        this.time.delayedCall(400, () => {
           for (let i = -1; i <= 1; i++) {
             let angle = Phaser.Math.DegToRad(i * 18);
-            let vx = Math.sin(angle) * 140;
+            let vx = Math.sin(angle) * 125;
             let vy = Math.cos(angle) * 220;
             this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, vx, vy, 1);
           }
-          this.lastTripleShot = this.time.now;
-          if (!this.tripleLifePillDropped) {
-            // Suelta 2 pildoras en fase 2 solo la primera vez
-            this.dropLifePill(this.boss.x - 60, this.boss.y + this.boss.displayHeight/2 + 5);
-            this.dropLifePill(this.boss.x + 60, this.boss.y + this.boss.displayHeight/2 + 5);
-            this.tripleLifePillDropped = true;
-          }
-        } else {
-          this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 170, 1);
+        });
+        this.lastBossTriple = this.time.now;
+        this.lastBossShot = this.time.now;
+      } else if (this.time.now > this.lastBossShot + 1200) {
+        this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 170, 1);
+        this.lastBossShot = this.time.now;
+      }
+      // Disparo especial raro (cada ~6,5s)
+      if (!this.boss.lastSpecial || this.time.now > this.boss.lastSpecial + 6500) {
+        this.bossTalk("¡Láser especial!");
+        this.time.delayedCall(700, () =>
+          this.shootBossBullet(this.boss.x, this.boss.y + this.boss.displayHeight/2, 0, 330, 2)
+        );
+        this.boss.lastSpecial = this.time.now;
+      }
+
+      // Suelta dos pildoras con separación durante la fase 2
+      if (this.pillsPhase2Dropped < 2) {
+        if (this.pillsPhase2Dropped === 0 && this.boss.health <= 280) {
+          this.time.delayedCall(150, () => {
+            this.dropLifePill(this.boss.x, this.boss.y + this.boss.displayHeight/2 + 8);
+          });
+          this.pillsPhase2Dropped++;
+        } else if (this.pillsPhase2Dropped === 1 && this.boss.health <= 120) {
+          this.time.delayedCall(400, () => {
+            this.dropLifePill(this.boss.x, this.boss.y + this.boss.displayHeight/2 + 10);
+          });
+          this.pillsPhase2Dropped++;
         }
       }
-      this.lastBossShot = this.time.now;
     }
-    if (this.boss.health<=250 && this.bossPhase===1) {
+    // Cambio a fase 2
+    if (this.boss.health<=375 && this.bossPhase===1) {
       this.bossPhase=2;
       this.boss.setTexture('boss2');
       this.bossTalk("¡Ahora verás mi verdadero poder!");
@@ -270,18 +280,19 @@ export default class GameScene extends Phaser.Scene {
 
   shootEnemyBullet(x, y) {
     let bullet = this.enemyBullets.create(x, y, 'enemy_bullet');
-    bullet.setVelocityY(180);
+    bullet.setVelocityY(140);
     bullet.setScale(0.7);
     bullet.setCollideWorldBounds(false);
   }
 
   dropLifePill(x, y) {
     let pill = this.lifePills.create(x, y, 'pill');
-    pill.setVelocityY(110);
+    pill.setVelocityY(90);
     pill.setScale(0.7);
     pill.setCollideWorldBounds(false);
   }
 
+  // --- Callbacks colisión ---
   bulletHitsEnemy(b, e) {
     const x=e.x, y=e.y;
     b.destroy(); e.destroy();
@@ -314,7 +325,7 @@ export default class GameScene extends Phaser.Scene {
     this.createExplosion(b.x,b.y,0.7);
     this.updateBossHealthBar();
   }
-  playerGetsLife(pill, player) {
+  playerGetsLife(player, pill) {
     pill.destroy();
     this.playerLives++;
     this.livesText.setText('Vidas: ' + this.playerLives);
@@ -331,10 +342,10 @@ export default class GameScene extends Phaser.Scene {
 
   updateBossHealthBar() {
     if (!this.boss || !this.bossHealthBar) return;
-    let percent = Math.max(this.boss.health / 500, 0);
+    let percent = Math.max(this.boss.health / 750, 0);
     this.bossHealthBar.width = 300 * percent;
     this.bossHealthBar.setFillStyle(percent > 0.5 ? 0x00ff44 : percent > 0.2 ? 0xffff44 : 0xff4444);
-    this.bossHealthText.setText('Boss: ' + Math.max(this.boss.health, 0) + ' / 500' + (this.bossPhase > 1 ? " ⚡" : ""));
+    this.bossHealthText.setText('Boss: ' + Math.max(this.boss.health, 0) + ' / 750' + (this.bossPhase > 1 ? " ⚡" : ""));
   }
 
   createExplosion(x,y,scale=1) {
@@ -347,6 +358,5 @@ export default class GameScene extends Phaser.Scene {
     this.bossTalkTimer = this.time.now;
   }
 }
-
 
 
