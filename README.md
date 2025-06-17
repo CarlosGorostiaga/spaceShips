@@ -57,15 +57,6 @@ Supera oleadas de enemigos, enfréntate a bosses épicos y progresa por mapas ca
 
 4. Abre el navegador en [http://localhost:8080](http://localhost:8080)
 
----
-
-## 🌍 **Desplegar en GitHub Pages**
-
-1. Haz push de tu rama principal (`main`) al repo de GitHub.
-2. Ve a **Settings > Pages** en tu repositorio y selecciona la rama principal (`main`), carpeta `/ (root)`.
-3. Guarda y espera unos minutos.
-4. Tu juego estará accesible en:  
-   `https://TU-USUARIO.github.io/arcade-space-game/`
 
 ---
 
@@ -73,7 +64,6 @@ Supera oleadas de enemigos, enfréntate a bosses épicos y progresa por mapas ca
 
 - Sprites: [Kenney.nl](https://kenney.nl/assets)
 - Motor de juego: [Phaser 3](https://phaser.io/)
-- [Tu nombre o nick aquí]
 
 ---
 
